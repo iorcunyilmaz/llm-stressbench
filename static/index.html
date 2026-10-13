@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="app_title">LLM StressBench - by Orçun YILMAZ</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              cyan: '#06b6d4',
+              emerald: '#10b981',
+              violet: '#8b5cf6',
+              amber: '#f59e0b',
+              rose: '#f43f5e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-white">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-50 px-6 py-3.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <i data-lucide="gauge" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-cyan-400 via-sky-300 to-indigo-400 bg-clip-text text-transparent">
+              LLM StressBench
+            </h1>
+            <a href="https://orcunyilmaz.com.tr" target="_blank" rel="noopener noreferrer" title="orcunyilmaz.com.tr" class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-700/80 hover:bg-cyan-900 hover:text-white transition flex items-center space-x-1">
+              <span data-i18n="app_author">by Orçun YILMAZ</span>
+              <i data-lucide="external-link" class="w-2.5 h-2.5"></i>
+            </a>
+          </div>
+          <p class="text-xs text-slate-400" data-i18n="app_subtitle">OpenAI API Uyumlu Yük, TTFT, TPS ve KV Cache Stres Analiz Laboratuvarı</p>
+        </div>
+      </div>
+
+      <!-- Action Buttons, Language & State -->
+      <div class="flex items-center space-x-3">
+        <!-- Language Switcher (TR / EN) -->
+        <div class="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 shadow-inner">
+          <button id="langBtnTr" onclick="window.i18n.setLang('tr')" title="Türkçe" class="px-2.5 py-1 rounded-md text-xs font-bold transition">
+            🇹🇷 TR
+          </button>
+          <button id="langBtnEn" onclick="window.i18n.setLang('en')" title="English" class="px-2.5 py-1 rounded-md text-xs font-semibold transition">
+            🇬🇧 EN
+          </button>
+        </div>
+
+        <div id="statusBadge" class="flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span id="statusText" data-i18n="status_ready">HAZIR</span>
+        </div>
+
+        <button id="btnStart" onclick="startBenchmark()" class="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 font-semibold text-xs tracking-wide text-white shadow-lg shadow-cyan-500/25 transition">
+          <i data-lucide="play" class="w-4 h-4 fill-white"></i>
+          <span data-i18n="btn_start">TESTİ BAŞLAT</span>
+        </button>
+
+        <button id="btnStop" onclick="stopBenchmark()" class="hidden flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 font-semibold text-xs tracking-wide text-white shadow-lg shadow-rose-600/25 transition">
+          <i data-lucide="square" class="w-4 h-4 fill-white"></i>
+          <span data-i18n="btn_stop">DURDUR</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="max-w-7xl mx-auto w-full p-6 flex-1 space-y-6">
+
+    <!-- Live HUD Metrics Counters -->
+    <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+      <!-- Metric 1: Aggregate Output TPS -->
+      <div class="glass-card p-4 relative overflow-hidden">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span data-i18n="metric_total_tps_title">Toplam Sistem TPS</span>
+          <i data-lucide="zap" class="w-4 h-4 text-cyan-400"></i>
+        </div>
+        <div class="text-2xl font-bold font-mono text-cyan-400" id="metricTotalTps">0.0</div>
+        <div class="text-[11px] text-slate-500 mt-1" data-i18n="metric_total_tps_sub">tokens/saniye (Tüm kullanıcılar)</div>
+      </div>
+
+      <!-- Metric 2: Median TTFT -->
+      <div class="glass-card p-4 relative overflow-hidden">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span data-i18n="metric_ttft_title">Medyan TTFT (İlk Token)</span>
+          <i data-lucide="timer" class="w-4 h-4 text-emerald-400"></i>
+        </div>
+        <div class="text-2xl font-bold font-mono text-emerald-400" id="metricTtft">0 <span class="text-sm font-normal text-slate-400">ms</span></div>
+        <div class="text-[11px] text-slate-500 mt-1" data-i18n="metric_ttft_sub">İlk chunk tepki süresi (p50)</div>
+      </div>
+
+      <!-- Metric 3: User TPS -->
+      <div class="glass-card p-4 relative overflow-hidden">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span data-i18n="metric_user_tps_title">Kullanıcı Başı Hız</span>
+          <i data-lucide="user-check" class="w-4 h-4 text-indigo-400"></i>
+        </div>
+        <div class="text-2xl font-bold font-mono text-indigo-400" id="metricUserTps">0.0</div>
+        <div class="text-[11px] text-slate-500 mt-1" data-i18n="metric_user_tps_sub">Akıcılık hızı (tok/s/kullanıcı)</div>
+      </div>
+
+      <!-- Metric 4: Active Concurrency -->
+      <div class="glass-card p-4 relative overflow-hidden">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span data-i18n="metric_concurrency_title">Aktif Eşzamanlılık</span>
+          <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
+        </div>
+        <div class="text-2xl font-bold font-mono text-amber-400" id="metricConcurrency">0</div>
+        <div class="text-[11px] text-slate-500 mt-1" data-i18n="metric_concurrency_sub">Simültane sanal kullanıcı</div>
+      </div>
+
+      <!-- Metric 5: Error Rate -->
+      <div class="glass-card p-4 relative overflow-hidden">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span data-i18n="metric_error_rate_title">Hata Oranı</span>
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400"></i>
+        </div>
+        <div class="text-2xl font-bold font-mono text-slate-200" id="metricErrorRate">0.0%</div>
+        <div class="text-[11px] text-slate-500 mt-1" id="metricErrorCount">0 Hata / 0 İstek</div>
+      </div>
+
+      <!-- Metric 6: SLA Capacity Status -->
+      <div class="glass-card p-4 relative overflow-hidden">
+        <div class="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span data-i18n="metric_sla_title">SLA Kapasite Durumu</span>
+          <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400" id="slaIcon"></i>
+        </div>
+        <div class="text-base font-bold text-emerald-400 truncate" id="metricSlaStatus" data-i18n="metric_sla_balanced">Dengeli / Bekliyor</div>
+        <div class="text-[11px] text-slate-500 mt-1" id="metricSlaDetails" data-i18n="metric_sla_sub">TTFT < 800ms Hedefi</div>
+      </div>
+    </section>
+
+    <!-- Test Configuration & Target Engine Settings -->
+    <section class="glass-card p-5 space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="sliders-horizontal" class="w-4 h-4 text-cyan-400"></i>
+          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider" data-i18n="config_title">Test & Sunucu Parametreleri</h2>
+        </div>
+        <!-- Test Mode Navigation Tabs -->
+        <div class="flex flex-wrap gap-1.5 p-1 bg-slate-900/90 rounded-xl border border-slate-800 text-xs">
+          <button onclick="setTestMode('concurrency_sweep')" id="tab-concurrency_sweep" class="tab-btn active px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5">
+            <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+            <span data-i18n="tab_concurrency">1. Eşzamanlı Kullanıcı & Kapasite Tavanı</span>
+          </button>
+          <button onclick="setTestMode('kv_cache_stress')" id="tab-kv_cache_stress" class="tab-btn px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5">
+            <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+            <span data-i18n="tab_kv_cache">2. KV Cache & Bağlam Dayanıklılığı</span>
+          </button>
+          <button onclick="setTestMode('prefix_cache_test')" id="tab-prefix_cache_test" class="tab-btn px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            <span data-i18n="tab_prefix_cache">3. Prefix Caching (PagedAttention)</span>
+          </button>
+          <button onclick="setTestMode('quick')" id="tab-quick" class="tab-btn px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5">
+            <i data-lucide="bolt" class="w-3.5 h-3.5"></i>
+            <span data-i18n="tab_quick">4. Hızlı Test</span>
+          </button>
+          <button onclick="setTestMode('compare')" id="tab-compare" class="tab-btn px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5">
+            <i data-lucide="git-compare" class="w-3.5 h-3.5"></i>
+            <span data-i18n="tab_compare">5. vLLM vs LiteLLM Kıyaslama</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Config Form Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+        <!-- Target Base URL -->
+        <div class="space-y-1.5">
+          <label class="block font-medium text-slate-300" data-i18n="lbl_target_url">Hedef API URL (OpenAI Uyumlu)</label>
+          <div class="relative">
+            <input type="text" id="targetUrl" value="http://localhost:8000/v1" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg px-3 py-2 text-slate-200 outline-none font-mono">
+          </div>
+          <span class="text-[11px] text-slate-500" data-i18n="hint_target_url">vLLM: :8000/v1 | LiteLLM: :4000/v1</span>
+        </div>
+
+        <!-- API Key -->
+        <div class="space-y-1.5">
+          <label class="block font-medium text-slate-300" data-i18n="lbl_api_key">API Key (Opsiyonel / LiteLLM için)</label>
+          <input type="password" id="apiKey" placeholder="Bearer sk-..." data-i18n-placeholder="placeholder_api_key" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg px-3 py-2 text-slate-200 outline-none font-mono">
+          <span class="text-[11px] text-slate-500" data-i18n="hint_api_key">Gerekiyorsa Bearer token girin</span>
+        </div>
+
+        <!-- Model Name + Auto Fetch -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="block font-medium text-slate-300" data-i18n="lbl_model_name">Model Adı</label>
+            <button onclick="fetchServerModels()" class="text-cyan-400 hover:text-cyan-300 flex items-center space-x-1 text-[11px]">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span data-i18n="btn_fetch_models">Modelleri Getir</span>
+            </button>
+          </div>
+          <div class="relative">
+            <input type="text" id="modelName" value="Orcun/Gemma-4-E4B-it" list="modelsDatalist" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg px-3 py-2 text-slate-200 outline-none font-mono">
+            <datalist id="modelsDatalist"></datalist>
+          </div>
+          <span class="text-[11px] text-slate-500" id="modelFetchStatus" data-i18n="hint_model_fetch">Sunucudan otomatik sorgulayabilirsiniz</span>
+        </div>
+
+        <!-- Target Type Preset -->
+        <div class="space-y-1.5">
+          <label class="block font-medium text-slate-300" data-i18n="lbl_target_type">Sunucu Mimarisi</label>
+          <select id="targetType" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg px-3 py-2 text-slate-200 outline-none">
+            <option value="vllm" data-i18n="opt_vllm">vLLM (Doğrudan GPU Çıkarım Motoru)</option>
+            <option value="litellm" data-i18n="opt_litellm">LiteLLM (Yönlendirici / Proxy Katmanı)</option>
+            <option value="custom" data-i18n="opt_custom">Özel OpenAI Uyumlu Uç Nokta</option>
+          </select>
+          <span class="text-[11px] text-slate-500" data-i18n="hint_target_type">Mimarilere özel teşhis kuralları</span>
+        </div>
+      </div>
+
+      <!-- Mode-Specific Parameters (Dynamic) -->
+      <div class="pt-2 border-t border-slate-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+        <!-- Concurrency Steps -->
+        <div class="space-y-1.5" id="groupConcurrency">
+          <label class="block font-medium text-slate-300" data-i18n="lbl_concurrency_steps">Eşzamanlılık Adımları (Virgülle)</label>
+          <input type="text" id="concurrencyList" value="1, 2, 4, 8, 16, 32" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg px-3 py-2 text-slate-200 outline-none font-mono">
+          <span class="text-[11px] text-slate-500" data-i18n="hint_concurrency_steps">Örnek: 1, 2, 4, 8, 16, 32, 64</span>
+        </div>
+
+        <!-- Requests Per Step -->
+        <div class="space-y-1.5">
+          <label class="block font-medium text-slate-300" data-i18n="lbl_requests_per_step">Adım Başına İstek Sayısı</label>
+          <input type="number" id="requestsPerStep" value="10" min="2" max="200" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg px-3 py-2 text-slate-200 outline-none font-mono">
+          <span class="text-[11px] text-slate-500" data-i18n="hint_requests_per_step">Her adımda gönderilecek toplam sorgu</span>
+        </div>
+
+        <!-- Context Lengths / KV Cache -->
+        <div class="space-y-1.5" id="groupContexts">
+          <label class="block font-medium text-slate-300" data-i18n="lbl_context_lengths">KV Cache Bağlam Boyutları (Token)</label>
+          <input type="text" id="contextLengths" value="512, 1024, 2048, 4096, 8192" class="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg px-3 py-2 text-slate-200 outline-none font-mono">
+          <span class="text-[11px] text-slate-500" data-i18n="hint_context_lengths">Prompt uzunluğunu kademeli büyütür</span>
+        </div>
+
+        <!-- SLA Thresholds -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="block font-medium text-slate-300" data-i18n="lbl_sla_targets">SLA Hedefleri</label>
+            <span class="text-[10px] text-cyan-400 font-mono" data-i18n="badge_sla_threshold">Gecikmesiz Eşik</span>
+          </div>
+          <div class="flex space-x-2">
+            <input type="number" id="slaMaxTtft" value="800" title="Maksimum Kabul Edilebilir TTFT (ms)" placeholder="Maks TTFT ms" class="w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-slate-200 font-mono">
+            <input type="number" id="slaMinTps" value="15" title="Minimum Kullanıcı TPS" placeholder="Min TPS" class="w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-slate-200 font-mono">
+          </div>
+          <span class="text-[11px] text-slate-500" data-i18n="hint_sla">Maks TTFT (ms) / Min Kullanıcı TPS</span>
+        </div>
+      </div>
+
+      <!-- Secondary Target for Compare Mode (Hidden by default) -->
+      <div id="compareSettings" class="hidden p-3 rounded-xl bg-slate-900/60 border border-indigo-900/50 space-y-3">
+        <div class="flex items-center space-x-2 text-xs font-semibold text-indigo-400">
+          <i data-lucide="git-compare" class="w-4 h-4"></i>
+          <span data-i18n="compare_title">Karşılaştırılacak İkinci Hedef (LiteLLM veya vLLM)</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div>
+            <label class="block text-slate-300 mb-1" data-i18n="lbl_compare_url">Hedef B URL</label>
+            <input type="text" id="compareUrl" value="http://localhost:4000/v1" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200 font-mono">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1" data-i18n="lbl_compare_key">Hedef B API Key</label>
+            <input type="password" id="compareKey" placeholder="sk-..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200 font-mono">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1" data-i18n="lbl_compare_model">Hedef B Model Adı</label>
+            <input type="text" id="compareModel" placeholder="Mercan/Gemma-4-E4B-it" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200 font-mono">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Executive Capacity & Knee-Point Diagnosis Card -->
+    <section id="diagnosisCard" class="glass-card p-5 border-l-4 border-l-cyan-500 hidden">
+      <div class="flex items-start space-x-3">
+        <div class="p-2 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400 mt-0.5">
+          <i data-lucide="brain-circuit" class="w-5 h-5"></i>
+        </div>
+        <div class="space-y-1.5 flex-1">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-slate-100 uppercase tracking-wide" data-i18n="diagnosis_title">
+              Sunucu Kapasite & Gecikmesiz Kullanıcı Analizi
+            </h3>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" id="diagnosisRunId">
+                Run: -
+              </span>
+              <button onclick="exportPdf()" class="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs flex items-center space-x-1.5 shadow-md shadow-cyan-600/30 transition">
+                <i data-lucide="file-down" class="w-3.5 h-3.5"></i>
+                <span data-i18n="btn_export_pdf">PDF Raporu Al</span>
+              </button>
+            </div>
+          </div>
+          <div class="text-xs text-slate-300 leading-relaxed space-y-1" id="diagnosisSummaryText" data-i18n="diagnosis_initial">
+            Test tamamlandığında sunucunun aynı anda kaç kullanıcıya gecikmesiz hizmet verebildiği burada özetlenecektir.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive Benchmark Charts Grid -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <!-- Chart 1: Concurrency vs TTFT & Latency (The Knee Point Curve) -->
+      <div class="glass-card p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="line-chart" class="w-4 h-4 text-emerald-400"></i>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200" data-i18n="chart_ttft_title">
+              Eşzamanlı Kullanıcı vs TTFT & Gecikme (Kapasite Tavanı)
+            </h3>
+          </div>
+          <span class="text-[10px] text-slate-500 font-mono" data-i18n="chart_ttft_sub">Doygunluk Kırılımı</span>
+        </div>
+        <div class="h-64 relative">
+          <canvas id="chartTtftLatency"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 2: Concurrency vs Total Generation TPS (Throughput Saturation) -->
+      <div class="glass-card p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="bar-chart-3" class="w-4 h-4 text-cyan-400"></i>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200" data-i18n="chart_tps_title">
+              Toplam Sistem Verimi (Tokens / Saniye)
+            </h3>
+          </div>
+          <span class="text-[10px] text-slate-500 font-mono" data-i18n="chart_tps_sub">GPU Doyum Platosu</span>
+        </div>
+        <div class="h-64 relative">
+          <canvas id="chartThroughput"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 3: Latency Distribution (Percentiles p50, p90, p95, p99) -->
+      <div class="glass-card p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="layers" class="w-4 h-4 text-indigo-400"></i>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200" data-i18n="chart_percentiles_title">
+              Gecikme Dağılımı & Kuyruk (p50 / p90 / p95 / p99)
+            </h3>
+          </div>
+          <span class="text-[10px] text-slate-500 font-mono" data-i18n="chart_percentiles_sub">Kuyruklanma Jitterı</span>
+        </div>
+        <div class="h-64 relative">
+          <canvas id="chartPercentiles"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 4: KV Cache / Context Length vs TTFT & Memory -->
+      <div class="glass-card p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-amber-400"></i>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200" data-i18n="chart_kv_title">
+              KV Cache & Bağlam Uzunluğu vs TTFT
+            </h3>
+          </div>
+          <span class="text-[10px] text-slate-500 font-mono" data-i18n="chart_kv_sub">KV Bellek Doyumu</span>
+        </div>
+        <div class="h-64 relative">
+          <canvas id="chartKvCache"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Detailed Step-by-Step Metrics Table -->
+    <section class="glass-card p-5 space-y-3">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="table" class="w-4 h-4 text-cyan-400"></i>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200" data-i18n="table_title">Adım Bazlı Test Metrikleri</h3>
+        </div>
+        <div class="flex items-center space-x-2 text-xs">
+          <button onclick="exportPdf()" class="px-2.5 py-1 rounded-lg bg-indigo-900/70 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/80 flex items-center space-x-1.5 shadow-sm transition">
+            <i data-lucide="file-down" class="w-3.5 h-3.5 text-indigo-400"></i>
+            <span class="font-semibold" data-i18n="btn_download_pdf">PDF Olarak İndir</span>
+          </button>
+          <button onclick="exportData('json')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center space-x-1">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>JSON</span>
+          </button>
+          <button onclick="exportData('csv')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center space-x-1">
+            <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>
+            <span>CSV</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-900/80 text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-2.5 px-3" data-i18n="col_concurrency">Eşzamanlılık</th>
+              <th class="py-2.5 px-3" data-i18n="col_success_fail">Başarılı / Hata</th>
+              <th class="py-2.5 px-3" data-i18n="col_total_tps">Toplam Verim (TPS)</th>
+              <th class="py-2.5 px-3" data-i18n="col_user_tps">Kullanıcı TPS</th>
+              <th class="py-2.5 px-3" data-i18n="col_ttft_p50">TTFT p50</th>
+              <th class="py-2.5 px-3" data-i18n="col_ttft_p95">TTFT p95</th>
+              <th class="py-2.5 px-3" data-i18n="col_latency_p95">Gecikme p95</th>
+              <th class="py-2.5 px-3" data-i18n="col_tpot">TPOT</th>
+              <th class="py-2.5 px-3" data-i18n="col_sla">SLA Durumu</th>
+            </tr>
+          </thead>
+          <tbody id="tableStepBody" class="divide-y divide-slate-800/60 font-mono text-slate-300">
+            <tr>
+              <td colspan="9" class="py-6 text-center text-slate-500 font-sans" data-i18n="table_empty">
+                Henüz test çalıştırılmadı. Yukarıdaki "Testi Başlat" butonuna tıklayarak testi başlatın.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Live Request Stream Feed & Console -->
+    <section class="glass-card p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="terminal" class="w-4 h-4 text-emerald-400"></i>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200" data-i18n="terminal_title">Canlı İstek Akışı (Gerçek Zamanlı Log)</h3>
+        </div>
+        <span class="text-[11px] text-slate-500 font-mono" id="streamCounter">0 İstek</span>
+      </div>
+
+      <div id="liveStreamTerminal" class="h-44 overflow-y-auto bg-slate-950/80 border border-slate-800/90 rounded-xl p-3 font-mono text-xs space-y-1.5 text-slate-300">
+        <div class="text-slate-500 italic" data-i18n="terminal_ready">Sistem hazır. Test başlatıldığında her isteğin mikro-saniyelik TTFT ve TPS değerleri burada akacaktır...</div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-slate-800/80 px-6 py-4 text-center text-xs text-slate-500" data-i18n="footer_text">
+    LLM StressBench • <a href="https://orcunyilmaz.com.tr" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline font-medium">by Orçun YILMAZ</a> • OpenAI API Uyumlu LLM Performans & Stres Test Laboratuvarı
+  </footer>
+
+  <script src="/static/i18n.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
